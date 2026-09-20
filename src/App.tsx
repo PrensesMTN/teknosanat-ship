@@ -1,57 +1,43 @@
-/**
- * @license
- * SPDX-License-Identifier: Apache-2.0
- */
-
 import React, { useEffect, useRef, useState, useCallback } from 'react';
+import { ArrowLeft, Mouse, Move, ZoomIn } from 'lucide-react';
 import { Engine } from './core/Engine';
 import { HUDOverlay } from './components/HUDOverlay';
 import { Navigation } from './components/Navigation';
 import { InfoCard } from './components/InfoCard';
-import { AudioController } from './components/AudioController';
-import { DiagnosticConsole } from './components/DiagnosticConsole';
-import { ControlsHelp } from './components/ControlsHelp';
-import { ROOMS_DATA, INITIAL_SHIP_TELEMETRY } from './config/roomsData';
-import { CameraPreset, DeckLevel, ShipTelemetry, ViewMode } from './types';
+import { RoomHotspots } from './components/RoomHotspots';
+import { ROOMS_DATA } from './config/roomsData';
+import { HotspotCoordinate, RenderMode } from './types';
 import { audioEngine } from './utils/AudioEngine';
 
 export default function App() {
   const canvasContainerRef = useRef<HTMLDivElement>(null);
   const engineRef = useRef<Engine | null>(null);
 
-  const [selectedRoomId, setSelectedRoomId] = useState<string | null>(null);
-  const [hoveredRoomId, setHoveredRoomId] = useState<string | null>(null);
-  const [activeDeck, setActiveDeck] = useState<DeckLevel>(0);
-  const [viewMode, setViewMode] = useState<ViewMode>('3d');
-  const [telemetry, setTelemetry] = useState<ShipTelemetry>(INITIAL_SHIP_TELEMETRY);
-  const [logs, setLogs] = useState<string[]>([
-    '[INIT] USS Prometheus 3D WebGL motoru başlatıldı.',
-    '[SYS] 8 adet primer güverte modülü yüklendi.',
-    '[NET] Telemetri veri akışı senkronize edildi.'
-  ]);
+  const [selectedRoomKey, setSelectedRoomKey] = useState<string | null>(null);
+  const [renderMode, setRenderModeState] = useState<RenderMode>('3d');
+  const [isInteriorView, setIsInteriorView] = useState<boolean>(false);
+  const [audioEnabled, setAudioEnabled] = useState<boolean>(false);
+  const [hotspots, setHotspots] = useState<HotspotCoordinate[]>([]);
 
-  const addLog = useCallback((message: string) => {
-    const time = new Date().toLocaleTimeString('tr-TR');
-    setLogs((prev) => [...prev, `[${time}] ${message}`]);
+  // Room selection handler
+  const handleSelectRoom = useCallback((key: string) => {
+    setSelectedRoomKey(key);
+    audioEngine.playSound('click');
+    if (engineRef.current) {
+      engineRef.current.selectRoom(key);
+    }
   }, []);
 
-  // Initialize 3D Engine
+  // Initialize Three.js Engine
   useEffect(() => {
     if (!canvasContainerRef.current) return;
 
     const engine = new Engine(canvasContainerRef.current, {
-      onRoomSelect: (roomId: string) => {
-        setSelectedRoomId(roomId);
-        const room = ROOMS_DATA[roomId];
-        if (room) {
-          addLog(`[SEÇİM] ${room.title} odaklandı. Koordinatlar: (${room.position.x}, ${room.position.y}, ${room.position.z})`);
-        }
+      onRoomSelect: (key: string) => {
+        handleSelectRoom(key);
       },
-      onRoomHover: (roomId: string | null) => {
-        setHoveredRoomId(roomId);
-      },
-      onFpsUpdate: (fps: number) => {
-        setTelemetry((prev) => ({ ...prev, fps }));
+      onHotspotsUpdate: (coords: HotspotCoordinate[]) => {
+        setHotspots(coords);
       }
     });
 
@@ -61,151 +47,158 @@ export default function App() {
       engine.destroy();
       engineRef.current = null;
     };
-  }, [addLog]);
+  }, [handleSelectRoom]);
 
-  // Handle Room Selection from UI
-  const handleSelectRoom = (roomId: string) => {
-    setSelectedRoomId(roomId);
-    if (engineRef.current) {
-      engineRef.current.selectRoom(roomId);
-    }
-  };
-
-  // Close Room InfoCard
-  const handleCloseInfoCard = () => {
-    setSelectedRoomId(null);
+  // Close Info Card
+  const handleCloseInfo = () => {
+    audioEngine.playSound('close');
+    setSelectedRoomKey(null);
     if (engineRef.current) {
       engineRef.current.selectRoom(null);
-      engineRef.current.setCameraPreset('iso');
     }
-    addLog('[NAV] Genel gemi görünümüne dönüldü.');
   };
 
-  // Deck Switching
-  const handleDeckChange = (deck: DeckLevel) => {
-    setActiveDeck(deck);
-    setTelemetry((prev) => ({ ...prev, activeDeck: deck }));
+  // Switch Render Mode (Blueprint vs 3D)
+  const handleSetRenderMode = (mode: RenderMode) => {
+    audioEngine.playSound('switch');
+    setRenderModeState(mode);
     if (engineRef.current) {
-      engineRef.current.setDeck(deck);
+      engineRef.current.setRenderMode(mode);
     }
-    const deckNames: Record<DeckLevel, string> = {
-      0: 'Tüm Güverteler',
-      1: 'Güverte 1 (Üst Komuta & Bilim)',
-      2: 'Güverte 2 (Mürettebat & Destek)',
-      3: 'Güverte 3 (Mühendislik & İtiş)'
-    };
-    addLog(`[GÜVERTE] ${deckNames[deck]} filtrelendi.`);
   };
 
-  // View Mode Changing (3D vs Blueprint vs Flux)
-  const handleViewModeChange = (mode: ViewMode) => {
-    setViewMode(mode);
-    setTelemetry((prev) => ({ ...prev, viewMode: mode }));
+  // Enter 3D Room Interior
+  const handleEnterInterior = () => {
+    if (!selectedRoomKey) return;
+    audioEngine.playSound('enter');
+    setIsInteriorView(true);
     if (engineRef.current) {
-      engineRef.current.setViewMode(mode);
+      engineRef.current.enterRoomInterior(selectedRoomKey);
     }
-    const modeNames: Record<ViewMode, string> = {
-      '3d': '3D Gerçekçi PBR Kaplama',
-      'blueprint': 'Holografik Şematik Blueprint',
-      'flux': 'Enerji & Güç Akısı (Flux)'
-    };
-    addLog(`[GÖRÜNÜM] Modu değiştirildi: ${modeNames[mode]}`);
   };
 
-  // Camera Presets
-  const handleCameraPreset = (preset: CameraPreset) => {
+  // Exit 3D Room Interior
+  const handleExitInterior = () => {
+    audioEngine.playSound('close');
+    setIsInteriorView(false);
     if (engineRef.current) {
-      engineRef.current.setCameraPreset(preset);
+      engineRef.current.exitRoomInterior();
     }
-    addLog(`[KAMERA] Bakış açısı uygulandı: ${preset.toUpperCase()}`);
   };
 
-  // Reset View
-  const handleResetView = () => {
-    audioEngine.playClick();
-    setSelectedRoomId(null);
-    setActiveDeck(0);
+  // Reset Camera View
+  const handleResetCamera = () => {
+    audioEngine.playSound('click');
     if (engineRef.current) {
-      engineRef.current.selectRoom(null);
-      engineRef.current.setDeck(0);
-      engineRef.current.setCameraPreset('iso');
+      engineRef.current.resetCameraView();
     }
-    addLog('[KAMERA] Kamera ve seçimler sıfırlandı.');
   };
 
-  const selectedRoom = selectedRoomId ? ROOMS_DATA[selectedRoomId] : null;
+  // Concept View Camera
+  const handleConceptView = () => {
+    audioEngine.playSound('click');
+    if (engineRef.current) {
+      engineRef.current.setConceptProfileView();
+    }
+  };
+
+  // Audio Toggle
+  const handleToggleAudio = () => {
+    const nextState = audioEngine.toggle();
+    setAudioEnabled(nextState);
+  };
+
+  const selectedRoom = selectedRoomKey ? ROOMS_DATA[selectedRoomKey] : null;
 
   return (
-    <div className="relative w-screen h-screen overflow-hidden bg-[#050811] text-slate-100 font-sans select-none">
-      {/* 3D WebGL Canvas Viewport */}
-      <div 
-        ref={canvasContainerRef} 
-        id="webgl-canvas-container"
-        className="absolute inset-0 z-0 cursor-grab active:cursor-grabbing"
+    <div className="bg-sci-fi-grid h-screen w-screen flex flex-col overflow-hidden text-slate-100 select-none">
+      {/* Holographic CRT Effect */}
+      <div className="scanlines absolute inset-0 z-10 pointer-events-none" />
+
+      {/* Header Navbar */}
+      <HUDOverlay
+        renderMode={renderMode}
+        audioEnabled={audioEnabled}
+        onToggleAudio={handleToggleAudio}
+        onResetCamera={handleResetCamera}
+        onConceptView={handleConceptView}
       />
 
-      {/* Blueprint Grid & Scanline Aesthetic Overlays */}
-      <div className="absolute inset-0 pointer-events-none blueprint-grid-overlay opacity-30 z-[1]" />
-      <div className="absolute inset-0 pointer-events-none scanlines opacity-25 z-[1]" />
-
-      {/* Top Telemetry & Ship Header HUD */}
-      <HUDOverlay 
-        telemetry={telemetry} 
-        selectedRoomTitle={selectedRoom ? selectedRoom.title : undefined}
-      />
-
-      {/* Hover Room Tooltip if hovered */}
-      {hoveredRoomId && !selectedRoomId && ROOMS_DATA[hoveredRoomId] && (
-        <div 
-          className="pointer-events-none absolute bottom-28 left-1/2 -translate-x-1/2 z-20 hud-glass px-4 py-2 rounded-xl border border-cyan-400/50 flex items-center gap-2.5 shadow-2xl animate-in fade-in"
-        >
-          <span 
-            className="w-2.5 h-2.5 rounded-full" 
-            style={{ backgroundColor: ROOMS_DATA[hoveredRoomId].color }} 
-          />
-          <div>
-            <div className="text-xs font-orbitron font-bold text-white tracking-wide">
-              {ROOMS_DATA[hoveredRoomId].title}
-            </div>
-            <div className="text-[10px] text-cyan-300 font-mono-tech">
-              {ROOMS_DATA[hoveredRoomId].deckName} • İncelemek için tıkla
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Bottom Main UI Overlay */}
-      <div className="absolute bottom-0 inset-x-0 p-3 sm:p-5 flex flex-col sm:flex-row items-end justify-between gap-4 pointer-events-none z-20">
-        {/* Left: View Mode, Deck Selector & Room Quick Jump */}
-        <Navigation
-          viewMode={viewMode}
-          onViewModeChange={handleViewModeChange}
-          activeDeck={activeDeck}
-          onDeckChange={handleDeckChange}
-          onCameraPresetChange={handleCameraPreset}
-          selectedRoomId={selectedRoomId}
-          onSelectRoom={handleSelectRoom}
-          onResetView={handleResetView}
+      {/* Main Interactive Stage */}
+      <div className="relative flex-1 w-full h-full overflow-hidden">
+        {/* WebGL Canvas */}
+        <div
+          ref={canvasContainerRef}
+          id="canvas-container"
+          className="w-full h-full cursor-grab active:cursor-grabbing"
         />
 
-        {/* Right Controls: Diagnostic Logs, Audio, and Help */}
-        <div className="flex items-center gap-2.5">
-          <DiagnosticConsole logs={logs} />
-          <AudioController />
-          <ControlsHelp />
+        {/* Dynamic Floating Labels Container */}
+        {!isInteriorView && (
+          <RoomHotspots
+            hotspots={hotspots}
+            selectedRoomKey={selectedRoomKey}
+            onSelectRoom={handleSelectRoom}
+          />
+        )}
+
+        {/* Left Controls & Sector List */}
+        {!isInteriorView && (
+          <div className="absolute top-4 sm:top-6 left-4 sm:left-6 z-20 flex flex-col gap-3 pointer-events-auto">
+            <Navigation
+              renderMode={renderMode}
+              onSetRenderMode={handleSetRenderMode}
+              selectedRoomKey={selectedRoomKey}
+              onSelectRoom={handleSelectRoom}
+            />
+          </div>
+        )}
+
+        {/* Right HUD Panel - Room Details */}
+        {selectedRoom && !isInteriorView && (
+          <div className="absolute top-4 sm:top-6 right-4 sm:right-6 bottom-4 sm:bottom-6 z-30 pointer-events-auto">
+            <InfoCard
+              room={selectedRoom}
+              onClose={handleCloseInfo}
+              onEnterInterior={handleEnterInterior}
+            />
+          </div>
+        )}
+
+        {/* Exit Interior HUD Button */}
+        {isInteriorView && (
+          <div
+            id="exitInteriorHud"
+            className="absolute bottom-8 left-1/2 -translate-x-1/2 z-30 transition duration-300 pointer-events-auto animate-in fade-in"
+          >
+            <button
+              id="exitInteriorBtn"
+              type="button"
+              onClick={handleExitInterior}
+              className="px-6 py-3 rounded-full hud-panel-amber text-amber-300 font-orbitron font-bold text-xs tracking-widest shadow-[0_0_25px_rgba(245,158,11,0.6)] hover:bg-amber-500/20 transition flex items-center gap-3 border border-amber-400 cursor-pointer"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              <span>DIŞ GÖRÜNÜME DÖN (UZAY GEMİSİ)</span>
+            </button>
+          </div>
+        )}
+
+        {/* Footer HUD Controls Help */}
+        <div className="absolute bottom-3 left-4 sm:left-6 z-20 text-[11px] font-mono text-slate-400 flex items-center gap-3 sm:gap-4 bg-slate-950/80 px-3 py-1.5 rounded border border-slate-800 pointer-events-none">
+          <div className="flex items-center gap-1">
+            <Mouse className="w-3.5 h-3.5 text-cyan-400" />
+            <span>Sol Tık: Görüşü Döndür</span>
+          </div>
+          <div className="hidden sm:flex items-center gap-1">
+            <Move className="w-3.5 h-3.5 text-cyan-400" />
+            <span>Sağ Tık: Pan / Kaydır</span>
+          </div>
+          <div className="flex items-center gap-1">
+            <ZoomIn className="w-3.5 h-3.5 text-cyan-400" />
+            <span>Tekerlek: Yakınlaştır</span>
+          </div>
         </div>
       </div>
-
-      {/* Side Slide-Over Modal: Selected Room Details */}
-      {selectedRoom && (
-        <div className="absolute top-16 sm:top-20 right-3 sm:right-5 z-30 pointer-events-none animate-in fade-in slide-in-from-right duration-300">
-          <InfoCard
-            room={selectedRoom}
-            onClose={handleCloseInfoCard}
-            onSelectConnectedRoom={handleSelectRoom}
-          />
-        </div>
-      )}
     </div>
   );
 }

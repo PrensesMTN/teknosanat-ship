@@ -1,190 +1,191 @@
 import * as THREE from 'three';
-import { CameraManager } from './CameraManager';
-import { LightingManager } from './Lighting';
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import gsap from 'gsap';
 import { ShipHull } from '../scene/ShipHull';
 import { RoomBuilder } from '../scene/RoomBuilder';
-import { RoomPropsManager } from '../scene/Props';
-import { MarkersManager } from '../scene/Markers';
-import { RaycastManager } from '../utils/Raycaster';
-import { CameraPreset, DeckLevel, ViewMode } from '../types';
+import { InteriorManager } from '../scene/InteriorManager';
 import { ROOMS_DATA } from '../config/roomsData';
+import { HotspotCoordinate, RenderMode } from '../types';
 
 export interface EngineCallbacks {
-  onRoomSelect?: (roomId: string) => void;
-  onRoomHover?: (roomId: string | null) => void;
-  onFpsUpdate?: (fps: number) => void;
+  onRoomSelect?: (roomKey: string) => void;
+  onHotspotsUpdate?: (hotspots: HotspotCoordinate[]) => void;
 }
 
 export class Engine {
   public container: HTMLElement;
-  public renderer: THREE.WebGLRenderer;
   public scene: THREE.Scene;
-  public cameraManager: CameraManager;
-  public lighting: LightingManager;
+  public camera: THREE.PerspectiveCamera;
+  public renderer: THREE.WebGLRenderer;
+  public controls: OrbitControls;
+
+  public shipGroup: THREE.Group;
   public hull: ShipHull;
   public roomBuilder: RoomBuilder;
-  public propsManager: RoomPropsManager;
-  public markersManager: MarkersManager;
-  public raycastManager: RaycastManager;
+  public interiorManager: InteriorManager;
 
   private isRunning: boolean = true;
   private animationFrameId: number = 0;
-  private clock: THREE.Clock;
   private resizeObserver: ResizeObserver | null = null;
   private callbacks: EngineCallbacks;
+  private raycaster: THREE.Raycaster;
+  private pointer: THREE.Vector2;
 
-  // Starfield
-  private starfield: THREE.Points | null = null;
-
-  // Floor blueprint grid
-  private gridHelper: THREE.GridHelper | null = null;
-
-  // Performance monitoring
-  private frameCount: number = 0;
-  private lastFpsUpdateTime: number = 0;
-  private selectedRoomId: string | null = null;
-  private hoveredRoomId: string | null = null;
+  public selectedRoomKey: string | null = null;
+  public currentRenderMode: RenderMode = '3d';
+  public isInteriorView: boolean = false;
 
   constructor(container: HTMLElement, callbacks: EngineCallbacks = {}) {
     this.container = container;
     this.callbacks = callbacks;
-    this.clock = new THREE.Clock();
+    this.raycaster = new THREE.Raycaster();
+    this.pointer = new THREE.Vector2(-999, -999);
 
     const width = container.clientWidth || window.innerWidth;
     const height = container.clientHeight || window.innerHeight;
 
-    // 1. Scene
+    // 1. Scene & Space Backdrop (Deep space with warm cosmic nebula glow)
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x050811);
-    this.scene.fog = new THREE.FogExp2(0x050811, 0.012);
+    this.scene.background = new THREE.Color(0x060c18);
+    this.scene.fog = new THREE.FogExp2(0x060c18, 0.008);
 
-    // 2. Renderer
-    this.renderer = new THREE.WebGLRenderer({
-      powerPreference: 'high-performance',
-      antialias: true,
-      alpha: false
-    });
+    // 2. Camera - Framed for majestic side profile as in the reference art
+    this.camera = new THREE.PerspectiveCamera(42, width / height, 0.1, 1000);
+    this.camera.position.set(0, 3.5, 34);
+
+    // 3. WebGL Renderer
+    this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
     this.renderer.setSize(width, height);
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.25;
-
+    this.renderer.toneMappingExposure = 1.15;
     container.appendChild(this.renderer.domElement);
 
-    // 3. Camera Manager
-    this.cameraManager = new CameraManager(this.renderer.domElement, width, height);
+    // 4. Orbit Controls
+    this.controls = new OrbitControls(this.camera, this.renderer.domElement);
+    this.controls.enableDamping = true;
+    this.controls.dampingFactor = 0.05;
+    this.controls.maxPolarAngle = Math.PI / 1.85;
+    this.controls.minDistance = 5;
+    this.controls.maxDistance = 90;
+    this.controls.target.set(0, 1.0, 0);
 
-    // 4. Lighting
-    this.lighting = new LightingManager();
-    this.scene.add(this.lighting.group);
+    // 5. Lighting Setup matching reference art's celestial warmth & rim highlights
+    const ambientLight = new THREE.AmbientLight(0xe2e8f0, 0.85);
+    this.scene.add(ambientLight);
 
-    // 5. Starfield & Floor Grid
-    this.createStarfield();
-    this.createBlueprintGrid();
+    // Warm celestial sun backlight (creates rim light on brain dome and armor spine)
+    const sunBackLight = new THREE.DirectionalLight(0xffedd5, 2.4);
+    sunBackLight.position.set(-18, 12, -22);
+    this.scene.add(sunBackLight);
 
-    // 6. 3D Ship Layers
+    // Primary front-side starship key light
+    const keyLight = new THREE.DirectionalLight(0xecfeff, 1.8);
+    keyLight.position.set(15, 25, 28);
+    keyLight.castShadow = true;
+    keyLight.shadow.mapSize.width = 2048;
+    keyLight.shadow.mapSize.height = 2048;
+    this.scene.add(keyLight);
+
+    // Underbelly fill light (soft cyan reflection)
+    const bellyLight = new THREE.DirectionalLight(0x0284c7, 0.6);
+    bellyLight.position.set(0, -15, 10);
+    this.scene.add(bellyLight);
+
+    // 6. Stars & Cosmic Dust Particles
+    this.createSpaceStars();
+
+    // Subtle tactical holographic grid at bottom
+    const gridHelper = new THREE.GridHelper(100, 50, 0x0284c7, 0x1e293b);
+    gridHelper.position.y = -3.5;
+    this.scene.add(gridHelper);
+
+    // 7. Spaceship Hierarchy
+    this.shipGroup = new THREE.Group();
+    this.scene.add(this.shipGroup);
+
     this.hull = new ShipHull();
-    this.scene.add(this.hull.group);
+    this.shipGroup.add(this.hull.group);
 
     this.roomBuilder = new RoomBuilder();
-    this.scene.add(this.roomBuilder.group);
+    this.shipGroup.add(this.roomBuilder.group);
 
-    this.propsManager = new RoomPropsManager();
-    this.scene.add(this.propsManager.group);
+    // Initialize in Realistic 3D mode by default to match the artwork!
+    this.hull.setRenderMode('3d');
+    this.roomBuilder.setRenderMode('3d');
 
-    this.markersManager = new MarkersManager();
-    this.scene.add(this.markersManager.group);
+    // 8. Interior Scene
+    this.interiorManager = new InteriorManager();
+    this.scene.add(this.interiorManager.group);
 
-    // 7. Raycaster
-    this.raycastManager = new RaycastManager(this.renderer.domElement, this.cameraManager.camera);
-    this.updateInteractiveObjects();
-
-    // 8. Event Handlers
+    // 9. Events & Resize
     this.bindEvents();
     this.setupResizeObserver();
 
-    // Start loop
-    this.lastFpsUpdateTime = performance.now();
+    // Start render loop
     this.tick();
   }
 
-  private createStarfield() {
-    const starCount = 1200;
-    const starGeo = new THREE.BufferGeometry();
+  private createSpaceStars() {
+    const starCount = 1500;
     const positions = new Float32Array(starCount * 3);
     const colors = new Float32Array(starCount * 3);
 
-    for (let i = 0; i < starCount * 3; i += 3) {
-      // Distribute in a large sphere
-      const r = 80 + Math.random() * 250;
-      const theta = Math.random() * Math.PI * 2;
-      const phi = Math.acos(2 * Math.random() - 1);
+    const colorPalette = [
+      new THREE.Color(0x38bdf8), // Cyan
+      new THREE.Color(0xfef08a), // Warm sun yellow
+      new THREE.Color(0xc084fc), // Soft nebula purple
+      new THREE.Color(0xffffff)  // Crisp white
+    ];
 
-      positions[i] = r * Math.sin(phi) * Math.cos(theta);
-      positions[i + 1] = r * Math.sin(phi) * Math.sin(theta);
-      positions[i + 2] = r * Math.cos(phi);
+    for (let i = 0; i < starCount; i++) {
+      const idx = i * 3;
+      positions[idx] = (Math.random() - 0.5) * 320;
+      positions[idx + 1] = (Math.random() - 0.5) * 260;
+      positions[idx + 2] = (Math.random() - 0.5) * 320;
 
-      // Star hues: cyan, white, light violet
-      const isCyan = Math.random() > 0.4;
-      colors[i] = isCyan ? 0.4 : 0.9;
-      colors[i + 1] = isCyan ? 0.9 : 0.9;
-      colors[i + 2] = 1.0;
+      const clr = colorPalette[Math.floor(Math.random() * colorPalette.length)];
+      colors[idx] = clr.r;
+      colors[idx + 1] = clr.g;
+      colors[idx + 2] = clr.b;
     }
 
-    starGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-    starGeo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    const starsGeom = new THREE.BufferGeometry();
+    starsGeom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    starsGeom.setAttribute('color', new THREE.BufferAttribute(colors, 3));
 
-    const starMat = new THREE.PointsMaterial({
-      size: 1.2,
+    const starsMat = new THREE.PointsMaterial({
+      size: 0.5,
       vertexColors: true,
       transparent: true,
-      opacity: 0.8
+      opacity: 0.85
     });
-
-    this.starfield = new THREE.Points(starGeo, starMat);
-    this.scene.add(this.starfield);
-  }
-
-  private createBlueprintGrid() {
-    // Holographic ground grid
-    this.gridHelper = new THREE.GridHelper(90, 45, 0x00f0ff, 0x0a2540);
-    this.gridHelper.position.y = -4.5;
-    (this.gridHelper.material as THREE.Material).transparent = true;
-    (this.gridHelper.material as THREE.Material).opacity = 0.45;
-    this.scene.add(this.gridHelper);
-  }
-
-  private updateInteractiveObjects() {
-    const targets: THREE.Object3D[] = [];
-    this.roomBuilder.roomMeshes.forEach((mesh) => targets.push(mesh));
-    this.markersManager.markerMeshes.forEach((mesh) => targets.push(mesh));
-    this.raycastManager.setInteractiveObjects(targets);
+    const starField = new THREE.Points(starsGeom, starsMat);
+    this.scene.add(starField);
   }
 
   private bindEvents() {
     const el = this.renderer.domElement;
 
-    el.addEventListener('pointermove', (e) => {
-      this.raycastManager.updatePointer(e.clientX, e.clientY);
-      const hit = this.raycastManager.checkIntersection();
-      const newHoverId = hit ? hit.roomId : null;
+    el.addEventListener('click', (e) => {
+      if (this.isInteriorView) return;
 
-      if (newHoverId !== this.hoveredRoomId) {
-        this.hoveredRoomId = newHoverId;
-        el.style.cursor = newHoverId ? 'pointer' : 'default';
-        this.roomBuilder.setHighlight(this.selectedRoomId || this.hoveredRoomId, !!this.hoveredRoomId && !this.selectedRoomId);
-        if (this.callbacks.onRoomHover) {
-          this.callbacks.onRoomHover(newHoverId);
+      const rect = el.getBoundingClientRect();
+      this.pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+      this.pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+
+      this.raycaster.setFromCamera(this.pointer, this.camera);
+      const meshes = Object.values(this.roomBuilder.roomMeshes);
+      const intersects = this.raycaster.intersectObjects(meshes, false);
+
+      if (intersects.length > 0) {
+        const hit = intersects[0];
+        const key = hit.object.userData.roomKey;
+        if (key && this.callbacks.onRoomSelect) {
+          this.callbacks.onRoomSelect(key);
         }
-      }
-    });
-
-    el.addEventListener('click', () => {
-      const hit = this.raycastManager.checkIntersection();
-      if (hit && hit.roomId) {
-        this.selectRoom(hit.roomId);
       }
     });
   }
@@ -194,88 +195,165 @@ export class Engine {
       for (const entry of entries) {
         const { width, height } = entry.contentRect;
         if (width > 0 && height > 0) {
+          this.camera.aspect = width / height;
+          this.camera.updateProjectionMatrix();
           this.renderer.setSize(width, height);
-          this.cameraManager.resize(width, height);
         }
       }
     });
     this.resizeObserver.observe(this.container);
   }
 
-  public selectRoom(roomId: string | null) {
-    this.selectedRoomId = roomId;
-    this.roomBuilder.setHighlight(roomId, false);
-    this.markersManager.setHighlight(roomId);
+  public selectRoom(key: string | null) {
+    this.selectedRoomKey = key;
+    this.roomBuilder.highlightRoom(key, this.currentRenderMode);
 
-    if (roomId && ROOMS_DATA[roomId]) {
-      const room = ROOMS_DATA[roomId];
-      this.cameraManager.flyToRoom(room.position, room.size);
-      if (this.callbacks.onRoomSelect) {
-        this.callbacks.onRoomSelect(roomId);
-      }
+    if (key && this.roomBuilder.roomMeshes[key]) {
+      const roomMesh = this.roomBuilder.roomMeshes[key];
+      const targetPos = roomMesh.position.clone();
+
+      gsap.to(this.controls.target, {
+        x: targetPos.x,
+        y: targetPos.y,
+        z: targetPos.z,
+        duration: 1.0,
+        ease: 'power2.out'
+      });
     }
   }
 
-  public setDeck(deck: DeckLevel) {
-    this.roomBuilder.filterDeck(deck);
-    this.markersManager.filterDeck(deck);
+  public setRenderMode(mode: RenderMode) {
+    this.currentRenderMode = mode;
+    this.hull.setRenderMode(mode);
+    this.roomBuilder.setRenderMode(mode);
+    this.roomBuilder.highlightRoom(this.selectedRoomKey, mode);
   }
 
-  public setViewMode(mode: ViewMode) {
-    this.lighting.updateMode(mode);
-    this.hull.updateMode(mode);
-    this.roomBuilder.updateMode(mode);
+  public enterRoomInterior(key: string) {
+    const room = ROOMS_DATA[key];
+    if (!room) return;
 
-    if (this.gridHelper) {
-      if (mode === 'blueprint') {
-        (this.gridHelper.material as THREE.Material).opacity = 0.85;
-      } else {
-        (this.gridHelper.material as THREE.Material).opacity = 0.4;
-      }
+    this.isInteriorView = true;
+    this.selectedRoomKey = key;
+    this.shipGroup.visible = false;
+
+    this.interiorManager.buildRoomInterior(room);
+
+    gsap.to(this.camera.position, {
+      x: 0,
+      y: 2,
+      z: 5.5,
+      duration: 1.5,
+      ease: 'power2.inOut'
+    });
+    gsap.to(this.controls.target, {
+      x: 0,
+      y: 1.2,
+      z: 0,
+      duration: 1.5,
+      ease: 'power2.inOut'
+    });
+  }
+
+  public exitRoomInterior() {
+    this.isInteriorView = false;
+    this.interiorManager.clear();
+    this.shipGroup.visible = true;
+    this.resetCameraView();
+  }
+
+  /**
+   * Smoothly animates camera back to the side profile concept view
+   */
+  public resetCameraView() {
+    gsap.to(this.camera.position, {
+      x: 0,
+      y: 3.5,
+      z: 34,
+      duration: 1.2,
+      ease: 'power2.out'
+    });
+    gsap.to(this.controls.target, {
+      x: 0,
+      y: 1.0,
+      z: 0,
+      duration: 1.2,
+      ease: 'power2.out'
+    });
+  }
+
+  /**
+   * Concept Art Profile View (matches illustration exactly)
+   */
+  public setConceptProfileView() {
+    gsap.to(this.camera.position, {
+      x: -0.5,
+      y: 1.6,
+      z: 32,
+      duration: 1.2,
+      ease: 'power2.out'
+    });
+    gsap.to(this.controls.target, {
+      x: -0.5,
+      y: 1.0,
+      z: 0,
+      duration: 1.2,
+      ease: 'power2.out'
+    });
+  }
+
+  private updateHotspotPositions() {
+    if (!this.callbacks.onHotspotsUpdate) return;
+
+    if (this.isInteriorView) {
+      this.callbacks.onHotspotsUpdate([]);
+      return;
     }
+
+    const tempV = new THREE.Vector3();
+    const hotspots: HotspotCoordinate[] = [];
+    const width = this.container.clientWidth || window.innerWidth;
+    const height = this.container.clientHeight || window.innerHeight;
+
+    Object.keys(ROOMS_DATA).forEach((key) => {
+      const mesh = this.roomBuilder.roomMeshes[key];
+      if (!mesh) return;
+
+      mesh.getWorldPosition(tempV);
+      tempV.y += ROOMS_DATA[key].size.y / 2 + 0.6;
+      tempV.project(this.camera);
+
+      const x = (tempV.x * 0.5 + 0.5) * width;
+      const y = (tempV.y * -0.5 + 0.5) * height;
+
+      hotspots.push({
+        key,
+        x,
+        y,
+        visible: tempV.z <= 1
+      });
+    });
+
+    this.callbacks.onHotspotsUpdate(hotspots);
   }
 
-  public setCameraPreset(preset: CameraPreset) {
-    this.cameraManager.setPreset(preset);
-  }
-
-  private tick = () => {
+  private tick = (time: number = 0) => {
     if (!this.isRunning) return;
 
-    const time = this.clock.getElapsedTime();
+    this.controls.update();
 
-    // Subtle starfield slow rotation
-    if (this.starfield) {
-      this.starfield.rotation.y = time * 0.02;
+    // Gentle ship floating when in exterior view and no room is locked
+    if (this.shipGroup && !this.isInteriorView && !this.selectedRoomKey) {
+      this.shipGroup.rotation.y = Math.sin(time * 0.0003) * 0.04;
+      this.shipGroup.position.y = Math.sin(time * 0.0008) * 0.18;
     }
 
-    // Update scene animations
-    this.lighting.update(time);
-    this.hull.update(time);
-    this.roomBuilder.update(time);
-    this.propsManager.update(time);
-    this.markersManager.update(time);
+    this.hull.update(time * 0.001);
+    this.interiorManager.update(time * 0.001);
 
-    // Slow ambient rotation if no room is selected
-    if (!this.selectedRoomId) {
-      this.cameraManager.idleRotate(0.0006);
-    }
+    this.updateHotspotPositions();
 
-    // Render
-    this.renderer.render(this.scene, this.cameraManager.camera);
-
-    // FPS Meter
-    this.frameCount++;
-    const now = performance.now();
-    if (now - this.lastFpsUpdateTime >= 1000) {
-      const fps = Math.round((this.frameCount * 1000) / (now - this.lastFpsUpdateTime));
-      if (this.callbacks.onFpsUpdate) {
-        this.callbacks.onFpsUpdate(fps);
-      }
-      this.frameCount = 0;
-      this.lastFpsUpdateTime = now;
-    }
-
+    this.renderer.render(this.scene, this.camera);
     this.animationFrameId = requestAnimationFrame(this.tick);
   };
 
@@ -287,7 +365,7 @@ export class Engine {
       this.resizeObserver.disconnect();
     }
 
-    this.cameraManager.destroy();
+    this.controls.dispose();
     this.renderer.dispose();
 
     if (this.renderer.domElement && this.renderer.domElement.parentElement) {

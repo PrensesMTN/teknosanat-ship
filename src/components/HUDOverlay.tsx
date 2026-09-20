@@ -1,147 +1,109 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import { 
-  ShieldCheck, 
-  Zap, 
-  Activity, 
-  Wifi, 
-  Layers, 
-  Compass,
-  Cpu
+  Rocket, 
+  Volume2, 
+  VolumeX, 
+  Crosshair, 
+  Eye,
+  Camera
 } from 'lucide-react';
-import { ShipTelemetry } from '../types';
+import { RenderMode } from '../types';
 
 interface HUDOverlayProps {
-  telemetry: ShipTelemetry;
-  selectedRoomTitle?: string;
-  onOpenDeckSelect?: () => void;
+  renderMode: RenderMode;
+  audioEnabled: boolean;
+  onToggleAudio: () => void;
+  onResetCamera: () => void;
+  onConceptView?: () => void;
 }
 
 export const HUDOverlay: React.FC<HUDOverlayProps> = ({
-  telemetry,
-  selectedRoomTitle,
+  renderMode,
+  audioEnabled,
+  onToggleAudio,
+  onResetCamera,
+  onConceptView
 }) => {
-  const [stardate, setStardate] = useState<string>('79421.4');
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      const now = new Date();
-      const val = (79420 + (now.getSeconds() * 0.1) + (now.getMilliseconds() * 0.0001)).toFixed(2);
-      setStardate(val);
-    }, 1000);
-    return () => clearInterval(interval);
-  }, []);
-
   return (
-    <div className="pointer-events-none absolute inset-0 flex flex-col justify-between p-3 sm:p-5 select-none z-10">
-      {/* Top Telemetry Header */}
-      <header className="flex flex-wrap items-center justify-between gap-3 w-full">
-        {/* Ship Identification & Logo */}
-        <div className="pointer-events-auto flex items-center gap-3 hud-glass px-4 py-2.5 rounded-lg hud-corner-brackets">
-          <div className="relative w-8 h-8 flex items-center justify-center rounded border border-cyan-400/40 bg-cyan-950/40">
-            <Compass className="w-5 h-5 text-cyan-400 animate-spin" style={{ animationDuration: '24s' }} />
-            <div className="absolute inset-0 rounded bg-cyan-400/10 blur-[2px]" />
-          </div>
-
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="font-orbitron font-bold tracking-wider text-xs sm:text-sm text-cyan-300">
-                USS PROMETHEUS
-              </span>
-              <span className="text-[10px] px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-300 font-mono-tech border border-cyan-400/30">
-                NX-801
-              </span>
-            </div>
-            <div className="text-[11px] text-slate-400 font-mono-tech flex items-center gap-2">
-              <span>ETKİLEŞİMLİ 3D BLUEPRINT</span>
-              <span className="text-cyan-500">•</span>
-              <span className="text-cyan-400 font-semibold">SD {stardate}</span>
-            </div>
-          </div>
+    <header className="relative z-20 flex flex-wrap justify-between items-center px-4 sm:px-6 py-2.5 sm:py-3 border-b border-cyan-500/30 bg-slate-950/85 backdrop-blur-md">
+      {/* Brand & Title */}
+      <div className="flex items-center gap-3 sm:gap-4">
+        <div className="relative flex items-center justify-center w-10 h-10 sm:w-11 sm:h-11 rounded-lg border border-cyan-400 bg-cyan-950/60 text-cyan-400 shadow-[0_0_18px_rgba(34,211,238,0.5)]">
+          <Rocket className="w-5 h-5 sm:w-6 sm:h-6" />
         </div>
-
-        {/* Center Live Telemetry Gauges */}
-        <div className="pointer-events-auto hidden md:flex items-center gap-4 hud-glass px-4 py-2 rounded-lg">
-          {/* Hull Integrity */}
-          <div className="flex items-center gap-2">
-            <ShieldCheck className="w-4 h-4 text-emerald-400" />
-            <div>
-              <div className="text-[9px] uppercase tracking-wider text-slate-400 font-mono-tech">Gövde Dayanımı</div>
-              <div className="text-xs font-orbitron font-bold text-emerald-300">
-                {telemetry.hullIntegrity}%
-              </div>
-            </div>
-          </div>
-
-          <div className="w-[1px] h-6 bg-cyan-500/20" />
-
-          {/* Reactor Power */}
-          <div className="flex items-center gap-2">
-            <Zap className="w-4 h-4 text-amber-400" />
-            <div>
-              <div className="text-[9px] uppercase tracking-wider text-slate-400 font-mono-tech">İyon Reaktör</div>
-              <div className="text-xs font-orbitron font-bold text-amber-300">
-                {telemetry.reactorOutputGW} GW
-              </div>
-            </div>
-          </div>
-
-          <div className="w-[1px] h-6 bg-cyan-500/20" />
-
-          {/* Warp Status */}
-          <div className="flex items-center gap-2">
-            <Activity className="w-4 h-4 text-cyan-400" />
-            <div>
-              <div className="text-[9px] uppercase tracking-wider text-slate-400 font-mono-tech">Warp Sürüşü</div>
-              <div className="text-xs font-orbitron font-bold text-cyan-300">
-                {telemetry.warpDriveState}
-              </div>
-            </div>
-          </div>
-
-          <div className="w-[1px] h-6 bg-cyan-500/20" />
-
-          {/* Life Support */}
-          <div className="flex items-center gap-2">
-            <Wifi className="w-4 h-4 text-indigo-400" />
-            <div>
-              <div className="text-[9px] uppercase tracking-wider text-slate-400 font-mono-tech">Yaşam Desteği</div>
-              <div className="text-xs font-orbitron font-bold text-indigo-300">
-                %{telemetry.lifeSupportLevel}
-              </div>
-            </div>
-          </div>
+        <div>
+          <h1 className="font-orbitron font-black text-base sm:text-lg md:text-xl tracking-wider text-cyan-400 uppercase flex flex-wrap items-center gap-2">
+            TEKNOSANAT AKADEMİ{' '}
+            <span className="text-[10px] sm:text-xs px-2 py-0.5 rounded bg-cyan-500/20 border border-cyan-500/50 text-cyan-300 font-mono">
+              3D UZAY GEMİSİ KAMPÜSÜ
+            </span>
+          </h1>
+          <p className="text-[10px] sm:text-xs text-slate-400 tracking-widest font-mono">
+            BİLİŞSEL ÇEKİRDEK & BİYOSFER GÖVDE SİMÜLASYONU
+          </p>
         </div>
+      </div>
 
-        {/* Right Status & FPS */}
-        <div className="pointer-events-auto flex items-center gap-2">
-          {/* Radar Scanner Mini Widget */}
-          <div className="hidden sm:flex items-center justify-center w-10 h-10 rounded-lg hud-glass border border-cyan-500/30 relative overflow-hidden">
-            <div className="absolute inset-1 rounded-full border border-cyan-400/30" />
-            <div className="absolute inset-2.5 rounded-full border border-cyan-400/20" />
-            <div className="absolute w-full h-[1px] bg-cyan-400/30" />
-            <div className="absolute h-full w-[1px] bg-cyan-400/30" />
-            <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-transparent to-cyan-400/30 rounded-full animate-radar origin-center" />
-            <div className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping" />
-          </div>
-
-          {/* FPS Badge */}
-          <div className="hud-glass px-2.5 py-1.5 rounded-lg flex items-center gap-1.5 border border-cyan-500/30 text-xs font-mono-tech">
-            <Cpu className="w-3.5 h-3.5 text-cyan-400" />
-            <span className="text-cyan-300 font-bold">{telemetry.fps}</span>
-            <span className="text-slate-400 text-[10px]">FPS</span>
-          </div>
+      {/* Center Telemetry Status */}
+      <div className="hidden lg:flex items-center gap-6 text-xs font-mono border-x border-cyan-500/20 px-6">
+        <div className="flex items-center gap-2">
+          <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping" />
+          <span className="text-slate-400">İON İTKİ & BİYOSFER:</span>
+          <span className="text-emerald-400 font-bold">%100 AKTİF</span>
         </div>
-      </header>
-
-      {/* Center Reticle / Active Focus Indicator */}
-      {selectedRoomTitle && (
-        <div className="self-center mb-auto mt-6 hud-glass px-4 py-1.5 rounded-full border border-cyan-400/40 flex items-center gap-2 animate-pulse-subtle">
-          <Layers className="w-3.5 h-3.5 text-cyan-400" />
-          <span className="text-xs font-orbitron tracking-wider text-cyan-200">
-            ODAK: {selectedRoomTitle}
+        <div className="flex items-center gap-2">
+          <Eye className="w-3.5 h-3.5 text-cyan-400" />
+          <span className="text-slate-400">GÖRÜNÜM:</span>
+          <span className="text-cyan-400 font-bold uppercase">
+            {renderMode === 'blueprint' ? 'MİMARİ BLUEPRINT (TEL KAFES)' : '3D KONSEPT GÖVDE (GERÇEKÇİ)'}
           </span>
         </div>
-      )}
-    </div>
+      </div>
+
+      {/* Action Buttons */}
+      <div className="flex items-center gap-2 sm:gap-3 mt-2 sm:mt-0">
+        {onConceptView && (
+          <button
+            id="conceptViewBtn"
+            type="button"
+            onClick={onConceptView}
+            className="px-3 py-1.5 rounded border border-amber-500/40 bg-amber-950/40 hover:bg-amber-500/20 text-amber-300 text-xs font-mono transition flex items-center gap-1.5 cursor-pointer shadow-[0_0_10px_rgba(245,158,11,0.2)]"
+            title="Referans çizimindeki profil açısına odaklan"
+          >
+            <Camera className="w-3.5 h-3.5 text-amber-400" />
+            <span className="hidden sm:inline">KONSEPT</span> PROFİL
+          </button>
+        )}
+
+        <button
+          id="toggleAudioBtn"
+          type="button"
+          onClick={onToggleAudio}
+          className="px-3 py-1.5 rounded border border-cyan-500/40 bg-cyan-950/40 hover:bg-cyan-500/20 text-cyan-300 text-xs font-mono transition flex items-center gap-2 cursor-pointer"
+        >
+          {audioEnabled ? (
+            <>
+              <Volume2 className="w-3.5 h-3.5 text-cyan-400" />
+              <span>SES: AÇIK</span>
+            </>
+          ) : (
+            <>
+              <VolumeX className="w-3.5 h-3.5 text-slate-400" />
+              <span>SES: KAPALI</span>
+            </>
+          )}
+        </button>
+
+        <button
+          id="resetCameraBtn"
+          type="button"
+          onClick={onResetCamera}
+          className="px-3 py-1.5 rounded border border-cyan-500/40 bg-cyan-950/40 hover:bg-cyan-500/20 text-cyan-300 text-xs font-mono transition flex items-center gap-2 cursor-pointer"
+        >
+          <Crosshair className="w-3.5 h-3.5" />
+          <span>GEMİYE ODAKLAN</span>
+        </button>
+      </div>
+    </header>
   );
 };
