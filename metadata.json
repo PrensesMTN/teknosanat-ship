@@ -1,0 +1,6 @@
+{
+  "name": "Spaceship Academy Blueprint",
+  "description": "Web3D ve Three.js tabanlı modüler, etkileşimli uzay gemisi blueprint ve sci-fi HUD kumanda merkezi uygulaması.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
